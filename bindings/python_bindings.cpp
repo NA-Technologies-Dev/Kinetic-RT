@@ -20,10 +20,7 @@ PYBIND11_MODULE(kinetic_rt, m) {
         }, "End graph capture and instantiate",
              py::arg("stream_obj"))
         .def("launch", [](GraphWrapper& self, py::object stream_obj, py::list buffers) {
-            // Secure Python object lifetimes against Garbage Collection during async GPU execution.
-            // Pin the references persistently onto the C++ instance until it's invalidated.
-            self.set_pinned_buffers(buffers);
-            self.launch(py::cast<uintptr_t>(stream_obj));
+            self.launch(py::cast<uintptr_t>(stream_obj), stream_obj, buffers);
         }, "Launch the instantiated graph, holding buffer references",
              py::arg("stream_obj"), py::arg("buffers") = py::list())
         .def("is_valid", &GraphWrapper::is_valid, "Check if graph is valid for current batch size and sequence length",

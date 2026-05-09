@@ -14,6 +14,7 @@ typedef int hipError_t;
 
 #define hipSuccess 0
 #define hipErrorInvalidValue 1
+#define hipErrorNotReady 2
 #define hipStreamCaptureModeGlobal 0
 
 struct hipDeviceProp_t {
@@ -160,6 +161,14 @@ inline hipError_t hipEventSynchronize(hipEvent_t event) {
     // Sync completes in-flight graphs
     global_mock_hip_state.is_graph_in_flight = false;
     global_mock_hip_state.in_flight_graph = nullptr;
+    return hipSuccess;
+}
+
+inline hipError_t hipEventQuery(hipEvent_t event) {
+    // In our simplified mock, we pretend everything is finished immediately
+    // unless we specifically want to simulate async pending states.
+    // Returning hipSuccess means the event has occurred.
+    // This allows GraphWrapper to pop state from the queue successfully.
     return hipSuccess;
 }
 
