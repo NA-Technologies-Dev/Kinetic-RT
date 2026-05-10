@@ -64,5 +64,16 @@ class TestValidateCompilation(unittest.TestCase):
             validate_compilation(bytes(compiled_hsaco))
         self.assertEqual(str(cm.exception), "Triton binary architecture is not AMDGPU.")
 
+    def test_partial_architecture_identifier(self):
+        # Case where only the first byte matches 0xE0 but it's not EM_AMDGPU (0x00E0)
+        compiled_hsaco = bytearray(64)
+        compiled_hsaco[0:4] = b"\x7fELF"
+        compiled_hsaco[4] = 2
+        compiled_hsaco[18:20] = b"\xE0\xFF"
+
+        with self.assertRaises(TritonCompilationError) as cm:
+            validate_compilation(bytes(compiled_hsaco))
+        self.assertEqual(str(cm.exception), "Triton binary architecture is not AMDGPU.")
+
 if __name__ == "__main__":
     unittest.main()

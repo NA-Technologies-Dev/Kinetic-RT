@@ -163,8 +163,8 @@ def validate_compilation(compiled_hsaco):
     if compiled_hsaco[4] != 2:
         raise TritonCompilationError("Triton binary is not a 64-bit ELF.")
 
-    # Check for EM_AMDGPU architecture identifier (offset 18 is 0xE0)
-    if compiled_hsaco[18] != 0xE0:
+    # Check for EM_AMDGPU architecture identifier (offset 18-19 is 0xE0 0x00)
+    if compiled_hsaco[18:20] != b"\xE0\x00":
         raise TritonCompilationError("Triton binary architecture is not AMDGPU.")
 
 def compile_and_serialize(engine, serializer, output_filepath, device_id="gfx1100"):
