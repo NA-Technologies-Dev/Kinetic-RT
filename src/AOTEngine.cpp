@@ -186,6 +186,17 @@ void AOTEngine::load_model(const std::string& filepath) {
 }
 
 void AOTEngine::load_kernel(const std::vector<uint8_t>& binary_data) {
+    if (binary_data.empty()) {
+        throw std::runtime_error("Cannot load kernel: binary data is empty.");
+    }
+
+    // Check for ELF magic number (\x7fELF)
+    if (binary_data.size() < 4 ||
+        binary_data[0] != 0x7f || binary_data[1] != 'E' ||
+        binary_data[2] != 'L'  || binary_data[3] != 'F') {
+        throw std::runtime_error("Cannot load kernel: invalid or missing ELF header.");
+    }
+
     if (module_ != nullptr) {
         CHECK_HIP(hipModuleUnload(module_));
         module_ = nullptr;

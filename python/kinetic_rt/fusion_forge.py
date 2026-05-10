@@ -145,6 +145,17 @@ def fused_rmsnorm_qkv_rope(
     v_out_ptrs = v_out_ptr + pid * stride_v_seq + offsets_d * stride_v_dim
     tl.store(v_out_ptrs, v, mask=offsets_d < d_model)
 
+class TritonCompilationError(Exception):
+    pass
+
+def validate_compilation(compiled_hsaco):
+    if not compiled_hsaco:
+        raise TritonCompilationError("Triton compilation yielded an empty binary.")
+
+    # Check for ELF magic number
+    if not compiled_hsaco.startswith(b"\x7fELF"):
+        raise TritonCompilationError("Triton binary lacks the standard ELF magic header.")
+
 def compile_and_serialize(engine, serializer, output_filepath, device_id="gfx1100"):
     """
     Triton-to-Kinetic Bridge
@@ -154,6 +165,9 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id="gfx110
     # triton.compile(fused_rmsnorm_qkv_rope, ...) -> returns .hsaco
     # For CI without a GPU, we mock the compiled binary
     compiled_hsaco = b"\x7fELF" + b"_Triton_Fused_Kernel"
+
+    # Guardrail check
+    validate_compilation(compiled_hsaco)
 
     # Dummy weights hash and op graph
     weights_hash = 987654321

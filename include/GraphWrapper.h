@@ -12,7 +12,14 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <deque>
+#include <vector>
 #include <pybind11/pybind11.h>
+
+struct InFlightState {
+    hipEvent_t event;
+    std::vector<pybind11::object> refs;
+};
 
 class GraphWrapper {
 public:
@@ -27,10 +34,7 @@ public:
     void end_capture(uintptr_t stream_ptr);
 
     // Launch the instantiated graph
-    void launch(uintptr_t stream_ptr);
-
-    // Pin buffers for lifetime management
-    void set_pinned_buffers(pybind11::list buffers);
+    void launch(uintptr_t stream_ptr, pybind11::object stream_obj, pybind11::list buffers);
 
     // Check if the graph is valid for the current shapes
     bool is_valid(int batch_size, int seq_len) const;
@@ -39,6 +43,8 @@ public:
     void invalidate();
 
 private:
+    void cleanup_in_flight_states();
+
     hipGraph_t graph_;
     hipGraphExec_t graph_exec_;
     bool is_instantiated_;
@@ -47,6 +53,6 @@ private:
     int current_batch_size_;
     int current_seq_len_;
 
-    // Python pinned references to prevent GC during async ops
-    pybind11::list pinned_buffers_;
+    // Registry of states currently executing on the GPU
+    std::deque<InFlightState> in_flight_states_;
 };

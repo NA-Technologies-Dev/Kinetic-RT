@@ -37,7 +37,26 @@ void GraphWrapper::invalidate() {
     is_instantiated_ = false;
     current_batch_size_ = -1;
     current_seq_len_ = -1;
-    pinned_buffers_ = pybind11::list(); // Release python references securely
+    cleanup_in_flight_states(); // Pop any completed ones
+    // Clear the rest
+    for (auto& state : in_flight_states_) {
+        CHECK_HIP(hipEventDestroy(state.event));
+    }
+    in_flight_states_.clear();
+}
+
+void GraphWrapper::cleanup_in_flight_states() {
+    while (!in_flight_states_.empty()) {
+        hipError_t status = hipEventQuery(in_flight_states_.front().event);
+        if (status == hipSuccess) {
+            CHECK_HIP(hipEventDestroy(in_flight_states_.front().event));
+            in_flight_states_.pop_front();
+        } else if (status == hipErrorNotReady) {
+            break; // Still executing
+        } else {
+            CHECK_HIP(status); // Throw on actual errors
+        }
+    }
 }
 
 bool GraphWrapper::is_valid(int batch_size, int seq_len) const {
@@ -74,17 +93,31 @@ void GraphWrapper::end_capture(uintptr_t stream_ptr) {
     is_instantiated_ = true;
 }
 
-void GraphWrapper::set_pinned_buffers(pybind11::list buffers) {
-    pinned_buffers_ = buffers;
-}
+void GraphWrapper::launch(uintptr_t stream_ptr, pybind11::object stream_obj, pybind11::list buffers) {
+    cleanup_in_flight_states();
 
-void GraphWrapper::launch(uintptr_t stream_ptr) {
     if (!is_instantiated_) {
         throw std::runtime_error("Cannot launch graph: not instantiated.");
     }
 
     hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
     CHECK_HIP(hipGraphLaunch(graph_exec_, stream));
-    // Record event to know when this launch finishes, so invalidate() can wait
+
+    // Record a new event for this specific launch
+    hipEvent_t event;
+    CHECK_HIP(hipEventCreate(&event));
+    CHECK_HIP(hipEventRecord(event, stream));
+
+    // Store references to prevent Python from GC'ing the stream or buffers
+    InFlightState state;
+    state.event = event;
+    state.refs.push_back(stream_obj);
+    for (auto item : buffers) {
+        state.refs.push_back(pybind11::reinterpret_borrow<pybind11::object>(item));
+    }
+
+    in_flight_states_.push_back(std::move(state));
+
+    // Also record the general sync event for invalidate() wait
     CHECK_HIP(hipEventRecord(sync_event_, stream));
 }
