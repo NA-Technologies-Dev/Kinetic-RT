@@ -49,6 +49,17 @@ def test_serializer_error_handling():
         print(f"Caught expected RuntimeError: {e}")
         assert "Failed to open file for reading" in str(e)
 
+    import tempfile
+    import uuid
+    # Test write failure
+    nonexistent_path = os.path.join(tempfile.gettempdir(), f"invalid_dir_{uuid.uuid4()}", "test.kin")
+    try:
+        serializer.save_kin_file(nonexistent_path, "gfx1100", 12345, [], [])
+        assert False, "Should have raised RuntimeError for write failure"
+    except RuntimeError as e:
+        print(f"Caught expected RuntimeError: {e}")
+        assert "Failed to open file for writing" in str(e)
+
 def test_bad_magic_number():
     serializer = kinetic_rt.Serializer()
     filepath = "bad_magic.kin"
@@ -76,7 +87,7 @@ def test_bad_magic_number():
         assert False, "Should have raised RuntimeError for bad magic number"
     except RuntimeError as e:
         print(f"Caught expected RuntimeError: {e}")
-        assert "bad magic number" in str(e)
+        assert "bad magic number" in str(e).lower()
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
