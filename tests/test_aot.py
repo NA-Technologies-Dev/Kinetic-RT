@@ -38,6 +38,17 @@ def test_serializer():
     os.remove(filepath)
     os.remove(filepath_mismatch)
 
+def test_serializer_error_handling():
+    serializer = kinetic_rt.Serializer()
+
+    # Test file not found
+    try:
+        serializer.load_kin_file("non_existent_file.kin")
+        assert False, "Should have raised RuntimeError for file not found"
+    except RuntimeError as e:
+        print(f"Caught expected RuntimeError: {e}")
+        assert "Failed to open file for reading" in str(e)
+
 def test_aot_engine():
     engine = kinetic_rt.AOTEngine()
     filepath = "aot_model.kin"
@@ -56,5 +67,6 @@ def test_aot_engine():
 
 if __name__ == "__main__":
     test_serializer()
+    test_serializer_error_handling()
     test_aot_engine()
     print("All tests passed successfully!")
