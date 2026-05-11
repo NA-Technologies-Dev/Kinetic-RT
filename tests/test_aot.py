@@ -87,7 +87,7 @@ def test_bad_magic_number():
         assert False, "Should have raised RuntimeError for bad magic number"
     except RuntimeError as e:
         print(f"Caught expected RuntimeError: {e}")
-        assert "bad magic number" in str(e)
+        assert "bad magic number" in str(e).lower()
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
