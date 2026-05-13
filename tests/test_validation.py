@@ -1,3 +1,4 @@
+import os
 import unittest
 import sys
 from types import ModuleType
@@ -27,22 +28,22 @@ class TestValidateCompilation(unittest.TestCase):
         compiled_hsaco = bytes(compiled_hsaco)
 
         # Should not raise any error
-        validate_compilation(compiled_hsaco)
+        validate_compilation(compiled_hsaco, "ROCm")
 
     def test_empty_binary(self):
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(b"")
+            validate_compilation(b"", "ROCm")
         self.assertEqual(str(cm.exception), "Triton compilation yielded an empty binary.")
 
     def test_missing_elf_magic(self):
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(b"NOT_AN_ELF_BINARY")
+            validate_compilation(b"NOT_AN_ELF_BINARY", "ROCm")
         self.assertEqual(str(cm.exception), "Triton binary lacks the standard ELF magic header.")
 
     def test_too_short_binary(self):
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(b"\x7fELF") # Only 4 bytes
-        self.assertEqual(str(cm.exception), "Triton binary is too short to be a valid AMDGPU HSACO.")
+            validate_compilation(b"\x7fELF", "ROCm") # Only 4 bytes
+        self.assertEqual(str(cm.exception), "Triton binary is too short to be a valid ELF.")
 
     def test_incorrect_class_identifier(self):
         compiled_hsaco = bytearray(64)
@@ -51,7 +52,7 @@ class TestValidateCompilation(unittest.TestCase):
         compiled_hsaco[18:20] = b"\xE0\x00"
 
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(bytes(compiled_hsaco))
+            validate_compilation(bytes(compiled_hsaco), "ROCm")
         self.assertEqual(str(cm.exception), "Triton binary is not a 64-bit ELF.")
 
     def test_incorrect_architecture_identifier(self):
@@ -61,7 +62,7 @@ class TestValidateCompilation(unittest.TestCase):
         compiled_hsaco[18:20] = b"\x3E\x00" # x86-64 instead of AMDGPU
 
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(bytes(compiled_hsaco))
+            validate_compilation(bytes(compiled_hsaco), "ROCm")
         self.assertEqual(str(cm.exception), "Triton binary architecture is not AMDGPU.")
 
     def test_partial_architecture_identifier(self):
@@ -72,8 +73,31 @@ class TestValidateCompilation(unittest.TestCase):
         compiled_hsaco[18:20] = b"\xE0\xFF"
 
         with self.assertRaises(TritonCompilationError) as cm:
-            validate_compilation(bytes(compiled_hsaco))
+            validate_compilation(bytes(compiled_hsaco), "ROCm")
         self.assertEqual(str(cm.exception), "Triton binary architecture is not AMDGPU.")
 
 if __name__ == "__main__":
     unittest.main()
+
+
+import kinetic_rt
+
+class TestHardwareMismatchError(unittest.TestCase):
+    def test_hardware_mismatch_exception_propagation(self):
+        engine = kinetic_rt.AOTEngine()
+        serializer = kinetic_rt.Serializer()
+
+        # Test file mismatch
+        filepath_mismatch = "test_mismatch.kin"
+        try:
+            serializer.save_kin_file(filepath_mismatch, "gfx942", "ROCm_gfx942", 12345, [], [])
+            # AOTEngine expects "gfx1100" by default
+            engine.load_model(filepath_mismatch)
+            self.fail("Should have raised HardwareMismatchError")
+        except Exception as e:
+            # We must catch kinetic_rt.HardwareMismatchError
+            self.assertTrue(isinstance(e, kinetic_rt.HardwareMismatchError))
+            self.assertIn("Hardware mismatch", str(e))
+        finally:
+            if os.path.exists(filepath_mismatch):
+                os.remove(filepath_mismatch)

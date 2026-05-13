@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include "../include/GraphWrapper.h"
 #include "../include/AOTEngine.h"
+#include "../include/Communicator.h"
 
 namespace py = pybind11;
 
@@ -19,15 +20,15 @@ PYBIND11_MODULE(kinetic_rt, m) {
             self.end_capture(py::cast<uintptr_t>(stream_obj));
         }, "End graph capture and instantiate",
              py::arg("stream_obj"))
-        .def("launch", [](GraphWrapper& self, py::object stream_obj, py::list buffers) {
-            self.launch(py::cast<uintptr_t>(stream_obj), stream_obj, buffers);
-        }, "Launch the instantiated graph, holding buffer references",
-             py::arg("stream_obj"), py::arg("buffers") = py::list())
+        .def("launch", [](GraphWrapper& self, std::vector<py::object> stream_objs, std::vector<py::object> buffers) {
+            self.launch(stream_objs, buffers);
+        }, "Launch the instantiated graph concurrently, holding buffer references",
+             py::arg("stream_objs"), py::arg("buffers") = std::vector<py::object>())
         .def("is_valid", &GraphWrapper::is_valid, "Check if graph is valid for current batch size and sequence length",
              py::arg("batch_size"), py::arg("seq_len"))
         .def("invalidate", &GraphWrapper::invalidate, "Manually invalidate the graph");
 
-    py::register_exception<HardwareMismatch>(m, "HardwareMismatch");
+    py::register_exception<HardwareMismatchError>(m, "HardwareMismatchError");
 
     py::class_<AOTEngine>(m, "AOTEngine")
         .def(py::init<>())
@@ -41,7 +42,14 @@ PYBIND11_MODULE(kinetic_rt, m) {
     py::class_<Serializer>(m, "Serializer")
         .def(py::init<>())
         .def("save_kin_file", &Serializer::save_kin_file, "Save .kin file",
-             py::arg("filepath"), py::arg("device_id"), py::arg("weights_hash"), py::arg("op_graph_data"), py::arg("kernel_binaries"))
+             py::arg("filepath"), py::arg("device_id"), py::arg("target_architecture"), py::arg("weights_hash"), py::arg("op_graph_data"), py::arg("kernel_binaries"))
         .def("load_kin_file", &Serializer::load_kin_file, "Load .kin file and return kernel binaries",
              py::arg("filepath"));
+
+    py::class_<Communicator>(m, "Communicator")
+        .def(py::init<int, int>(), py::arg("rank"), py::arg("world_size"))
+        .def("all_reduce_async", [](Communicator& self, uintptr_t sendbuff, uintptr_t recvbuff, size_t count, int datatype, int op, py::object stream_obj) {
+            py::gil_scoped_release release;
+            self.all_reduce_async(reinterpret_cast<void*>(sendbuff), reinterpret_cast<void*>(recvbuff), count, datatype, op, py::cast<uintptr_t>(stream_obj));
+        }, "Perform async all_reduce", py::arg("sendbuff"), py::arg("recvbuff"), py::arg("count"), py::arg("datatype"), py::arg("op"), py::arg("stream_obj"));
 }
