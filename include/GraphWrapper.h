@@ -35,7 +35,7 @@ public:
     void end_capture(uintptr_t stream_ptr);
 
     // Launch the instantiated graph
-    void launch(uintptr_t stream_ptr, pybind11::object stream_obj, pybind11::list buffers);
+    void launch(std::vector<pybind11::object> stream_objs, std::vector<pybind11::object> buffers);
 
     // Check if the graph is valid for the current shapes
     bool is_valid(int batch_size, int seq_len) const;

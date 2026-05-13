@@ -1,3 +1,5 @@
+import os
+os.environ["TRITON_INTERPRET"] = "1"
 import torch
 import torch.nn.functional as F
 import os

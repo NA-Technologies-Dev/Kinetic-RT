@@ -14,9 +14,9 @@
 #endif
 
 // HardwareMismatch Exception
-class HardwareMismatch : public std::runtime_error {
+class HardwareMismatchError : public std::runtime_error {
 public:
-    explicit HardwareMismatch(const std::string& msg) : std::runtime_error(msg) {}
+    explicit HardwareMismatchError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
 // Represents the .kin file structured header
@@ -25,11 +25,13 @@ struct KinHeader {
     uint32_t magic_number; // e.g., 0x4B494E00
     uint32_t version;
     char device_id[256];   // e.g., "gfx1100"
+    char target_architecture[256]; // e.g., "CUDA_sm75" or "ROCm_gfx942"
     uint64_t weights_hash;
     uint64_t op_graph_data_offset;
     uint64_t op_graph_data_size;
     uint64_t kernel_binaries_offset;
     uint64_t kernel_binaries_size;
+    uint32_t tensor_parallel_degree;
 };
 #pragma pack(pop)
 
@@ -51,16 +53,18 @@ public:
     Serializer();
 
     // Serializes the graph recipe and kernel binaries into a single .kin file
-    void save_kin_file(const std::string& filepath, const std::string& device_id, uint64_t weights_hash, const std::vector<uint8_t>& op_graph_data, const std::vector<uint8_t>& kernel_binaries);
+    void save_kin_file(const std::string& filepath, const std::string& device_id, const std::string& target_architecture, uint64_t weights_hash, const std::vector<uint8_t>& op_graph_data, const std::vector<uint8_t>& kernel_binaries);
 
     // Reads the .kin file and validates hardware compatibility
     // Returns the kernel binaries
     std::vector<uint8_t> load_kin_file(const std::string& filepath);
 
     const std::string& get_device_id() const { return device_id_; }
+    const std::string& get_loaded_target_architecture() const { return loaded_target_architecture_; }
 
 private:
     std::string device_id_;
+    std::string loaded_target_architecture_;
 };
 
 class AOTEngine {
@@ -80,6 +84,6 @@ private:
     hipModule_t module_;
     std::recursive_mutex engine_mutex_;
 
-    void load_kernel(const std::vector<uint8_t>& binary_data);
-    void validate_elf_structure(const std::vector<uint8_t>& binary_data) const;
+    void load_kernel(const std::vector<uint8_t>& binary_data, const std::string& target_architecture);
+    void validate_elf_structure(const std::vector<uint8_t>& binary_data, const std::string& target_architecture) const;
 };

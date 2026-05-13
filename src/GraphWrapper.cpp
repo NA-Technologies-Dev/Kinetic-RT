@@ -103,7 +103,7 @@ void GraphWrapper::end_capture(uintptr_t stream_ptr) {
     is_instantiated_ = true;
 }
 
-void GraphWrapper::launch(uintptr_t stream_ptr, pybind11::object stream_obj, pybind11::list buffers) {
+void GraphWrapper::launch(std::vector<pybind11::object> stream_objs, std::vector<pybind11::object> buffers) {
     std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
     cleanup_in_flight_states();
 
@@ -111,37 +111,68 @@ void GraphWrapper::launch(uintptr_t stream_ptr, pybind11::object stream_obj, pyb
         throw std::runtime_error("Cannot launch graph: not instantiated.");
     }
 
-    hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
-    CHECK_HIP(hipGraphLaunch(graph_exec_, stream));
+    std::vector<std::thread> workers;
 
-    // Record a new event for this specific launch
-    hipEvent_t event;
-    hipError_t err_create = hipEventCreate(&event);
-    hipError_t err_record = hipSuccess;
-    if (err_create == hipSuccess) {
-        err_record = hipEventRecord(event, stream);
+    std::vector<uintptr_t> stream_ptrs;
+    stream_ptrs.reserve(stream_objs.size());
+#ifndef NO_PYBIND
+    for (auto& stream_obj : stream_objs) {
+        stream_ptrs.push_back(pybind11::cast<uintptr_t>(stream_obj));
     }
+#else
+    for (auto& stream_obj : stream_objs) {
+        stream_ptrs.push_back(0); // Mock for C++ binary
+    }
+#endif
 
-    if (err_create != hipSuccess || err_record != hipSuccess) {
-        // Fail-Safe: Synchronize immediately if event creation fails
-        // This ensures Python objects stay alive while GPU executes
-        CHECK_HIP(hipStreamSynchronize(stream));
-    } else {
-        // Store references to prevent Python from GC'ing the stream or buffers
-        InFlightState state;
-        state.event = event;
-        state.refs.reserve(buffers.size() + 1); // Micro-optimization
-        state.refs.emplace_back(stream_obj);
-        for (auto item : buffers) {
-            state.refs.emplace_back(pybind11::reinterpret_borrow<pybind11::object>(item));
+    {
+#ifndef NO_PYBIND
+        pybind11::gil_scoped_release release;
+#endif
+
+        for (auto stream_ptr : stream_ptrs) {
+            hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+
+            workers.emplace_back([this, stream]() {
+                CHECK_HIP(hipGraphLaunch(graph_exec_, stream));
+            });
         }
 
-        in_flight_states_.emplace_back(std::move(state));
+        for (auto& worker : workers) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
     }
 
-    // Also record the general sync event for invalidate() wait
-    hipError_t sync_err = hipEventRecord(sync_event_, stream);
-    if (sync_err != hipSuccess) {
-        CHECK_HIP(hipStreamSynchronize(stream));
+    for (size_t i = 0; i < stream_objs.size(); ++i) {
+        auto& stream_obj = stream_objs[i];
+        uintptr_t stream_ptr = stream_ptrs[i];
+        hipStream_t stream = reinterpret_cast<hipStream_t>(stream_ptr);
+
+        hipEvent_t event;
+        hipError_t err_create = hipEventCreate(&event);
+        hipError_t err_record = hipSuccess;
+        if (err_create == hipSuccess) {
+            err_record = hipEventRecord(event, stream);
+        }
+
+        if (err_create != hipSuccess || err_record != hipSuccess) {
+            CHECK_HIP(hipStreamSynchronize(stream));
+        } else {
+            InFlightState state;
+            state.event = event;
+            state.refs.reserve(buffers.size() + stream_objs.size());
+            state.refs.emplace_back(stream_obj);
+            for (auto& item : buffers) {
+                state.refs.emplace_back(item);
+            }
+            in_flight_states_.emplace_back(std::move(state));
+        }
+
+        hipError_t sync_err = hipEventRecord(sync_event_, stream);
+        if (sync_err != hipSuccess) {
+            CHECK_HIP(hipStreamSynchronize(stream));
+        }
     }
 }

@@ -15,7 +15,7 @@ def test_serializer():
     kernel_binaries[18:20] = [0xE0, 0x00]
 
     # Save file
-    serializer.save_kin_file(filepath, device_id, weights_hash, op_graph_data, kernel_binaries)
+    serializer.save_kin_file(filepath, device_id, "ROCm_gfx1100", weights_hash, op_graph_data, kernel_binaries)
     assert os.path.exists(filepath)
 
     # Load file
@@ -26,13 +26,13 @@ def test_serializer():
     # The mock currently returns "gfx1100"
     # So to trigger hardware mismatch, we'll save a file that expects "gfx942"
     filepath_mismatch = "test_mismatch.kin"
-    serializer.save_kin_file(filepath_mismatch, "gfx942", weights_hash, op_graph_data, kernel_binaries)
+    serializer.save_kin_file(filepath_mismatch, "gfx942", "ROCm_gfx942", weights_hash, op_graph_data, kernel_binaries)
 
     try:
         serializer.load_kin_file(filepath_mismatch)
-        assert False, "Should have raised HardwareMismatch"
-    except kinetic_rt.HardwareMismatch as e:
-        print(f"Caught expected HardwareMismatch: {e}")
+        assert False, "Should have raised HardwareMismatchError"
+    except kinetic_rt.HardwareMismatchError as e:
+        print(f"Caught expected HardwareMismatchError: {e}")
         assert "expected gfx942 but got gfx1100" in str(e)
 
     os.remove(filepath)
@@ -54,7 +54,7 @@ def test_serializer_error_handling():
     # Test write failure
     nonexistent_path = os.path.join(tempfile.gettempdir(), f"invalid_dir_{uuid.uuid4()}", "test.kin")
     try:
-        serializer.save_kin_file(nonexistent_path, "gfx1100", 12345, [], [])
+        serializer.save_kin_file(nonexistent_path, "gfx1100", "ROCm_gfx1100", 12345, [], [])
         assert False, "Should have raised RuntimeError for write failure"
     except RuntimeError as e:
         print(f"Caught expected RuntimeError: {e}")
@@ -80,7 +80,7 @@ def test_bad_magic_number():
     with open(filepath, "wb") as f:
         # Magic number is little endian 0x12345678 instead of 0x4B494E00
         f.write(struct.pack("<I", 0x12345678))
-        f.write(b'\x00' * (256 + 4 + 8 * 5))
+        f.write(b'\x00' * (256 + 256 + 4 + 8 * 5 + 4))
 
     try:
         serializer.load_kin_file(filepath)

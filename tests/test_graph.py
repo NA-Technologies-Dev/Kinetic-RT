@@ -24,7 +24,7 @@ def test_graph_capture_and_launch():
 
     # 3. Loop (Replay)
     # Pass an integer proxy for stream_obj since bindings cast stream_obj to uintptr_t
-    wrapper.launch(stream_ptr, [])
+    wrapper.launch([stream_ptr], [])
 
     # Check dynamic shape handling
     assert not wrapper.is_valid(batch_size=2, seq_len=128)
@@ -37,7 +37,7 @@ def test_graph_capture_and_launch():
     assert not wrapper.is_valid(batch_size=1, seq_len=128)
 
     # Launch new graph
-    wrapper.launch(stream_ptr, [])
+    wrapper.launch([stream_ptr], [])
 
     print("Graph validation passed successfully!")
 
@@ -45,7 +45,7 @@ def test_uninstantiated_launch():
     wrapper = kinetic_rt.GraphWrapper()
     stream_ptr = 1234
     try:
-        wrapper.launch(stream_ptr, [])
+        wrapper.launch([stream_ptr], [])
         assert False, "Expected RuntimeError due to uninstantiated graph"
     except RuntimeError as e:
         assert "not instantiated" in str(e).lower()
@@ -65,7 +65,7 @@ def test_async_stress():
         # We pass a new buffer object on each call. If the system was GC'ing them incorrectly
         # or racing, this would crash/segfault on a real system, and our stateful mock tracks it safely.
         dummy_buffer = [i]
-        wrapper.launch(stream_obj, dummy_buffer)
+        wrapper.launch([stream_obj], dummy_buffer)
 
     # Invalidate at the end should clear out everything and sync cleanly
     wrapper.invalidate()

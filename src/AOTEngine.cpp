@@ -62,17 +62,20 @@ Serializer::Serializer() {
     device_id_ = std::string(prop.gcnArchName);
 }
 
-void Serializer::save_kin_file(const std::string& filepath, const std::string& device_id, uint64_t weights_hash, const std::vector<uint8_t>& op_graph_data, const std::vector<uint8_t>& kernel_binaries) {
+void Serializer::save_kin_file(const std::string& filepath, const std::string& device_id, const std::string& target_architecture, uint64_t weights_hash, const std::vector<uint8_t>& op_graph_data, const std::vector<uint8_t>& kernel_binaries) {
     std::ofstream out(filepath, std::ios::binary);
     if (!out) {
         throw std::runtime_error("Failed to open file for writing: " + filepath);
     }
 
     KinHeader header;
+    std::memset(&header, 0, sizeof(KinHeader));
     header.magic_number = htole32(0x4B494E00); // "KIN\0"
     header.version = htole32(1);
     std::strncpy(header.device_id, device_id.c_str(), sizeof(header.device_id) - 1);
     header.device_id[sizeof(header.device_id) - 1] = '\0';
+    std::strncpy(header.target_architecture, target_architecture.c_str(), sizeof(header.target_architecture) - 1);
+    header.target_architecture[sizeof(header.target_architecture) - 1] = '\0';
     header.weights_hash = htole64(weights_hash);
 
     header.op_graph_data_offset = htole64(sizeof(KinHeader));
@@ -80,6 +83,7 @@ void Serializer::save_kin_file(const std::string& filepath, const std::string& d
 
     header.kernel_binaries_offset = htole64(sizeof(KinHeader) + op_graph_data.size());
     header.kernel_binaries_size = htole64(kernel_binaries.size());
+    header.tensor_parallel_degree = htole32(1);
 
     out.write(reinterpret_cast<const char*>(&header), sizeof(header));
     out.write(reinterpret_cast<const char*>(op_graph_data.data()), op_graph_data.size());
@@ -132,9 +136,15 @@ std::vector<uint8_t> Serializer::load_kin_file(const std::string& filepath) {
         throw std::runtime_error("Invalid file format: kernel binary excessively large.");
     }
 
+    char safe_target[256];
+    std::strncpy(safe_target, header.target_architecture, 255);
+    safe_target[255] = '\0';
+    loaded_target_architecture_ = std::string(safe_target);
+
+    header.device_id[255] = '\0';
     // Verify Hardware Mismatch
     if (device_id_ != header.device_id) {
-        throw HardwareMismatch("Hardware mismatch: expected " + std::string(header.device_id) + " but got " + device_id_);
+        throw HardwareMismatchError("Hardware mismatch: expected " + std::string(header.device_id) + " but got " + device_id_);
     }
 
     // Skip op graph data for now, just read kernel binaries
@@ -181,7 +191,14 @@ void AOTEngine::compile_ahead_of_time(const std::string& output_filepath, uintpt
 
     uint64_t dummy_weights_hash = 123456789;
 
-    serializer_.save_kin_file(output_filepath, device_id, dummy_weights_hash, dummy_op_graph_data, dummy_hsaco);
+#ifdef __HIP_PLATFORM_NVIDIA__
+    std::string target_architecture = "CUDA_sm75";
+    dummy_hsaco[18] = 0xBE; dummy_hsaco[19] = 0x00; // EM_CUDA
+#else
+    std::string target_architecture = "ROCm_gfx1100";
+#endif
+
+    serializer_.save_kin_file(output_filepath, device_id, target_architecture, dummy_weights_hash, dummy_op_graph_data, dummy_hsaco);
 }
 
 void AOTEngine::load_model(const std::string& filepath) {
@@ -190,10 +207,10 @@ void AOTEngine::load_model(const std::string& filepath) {
     std::vector<uint8_t> kernel_binaries = serializer_.load_kin_file(filepath);
 
     // 2. Load the kernel into the HIP module
-    load_kernel(kernel_binaries);
+    load_kernel(kernel_binaries, serializer_.get_loaded_target_architecture());
 }
 
-void AOTEngine::validate_elf_structure(const std::vector<uint8_t>& binary_data) const {
+void AOTEngine::validate_elf_structure(const std::vector<uint8_t>& binary_data, const std::string& target_architecture) const {
     // Deep Binary Validation
     if (binary_data.size() < 64) {
         throw std::runtime_error("Cannot load kernel: binary data too small for a valid ELF header.");
@@ -210,18 +227,30 @@ void AOTEngine::validate_elf_structure(const std::vector<uint8_t>& binary_data) 
         throw std::runtime_error("Cannot load kernel: ELF binary is not 64-bit.");
     }
 
-    // Check for EM_AMDGPU (0xE0) architecture
-    // In an ELF header, e_machine is a 16-bit little-endian integer at offset 18
     uint16_t e_machine = binary_data[18] | (binary_data[19] << 8);
-    if (e_machine != 0xE0) { // EM_AMDGPU
-        throw std::runtime_error("Cannot load kernel: ELF binary is not for AMDGPU architecture.");
+
+    // Cross-platform interlock check
+#ifdef __HIP_PLATFORM_NVIDIA__
+    std::string expected_prefix = "CUDA";
+    uint16_t expected_em = 0xBE; // EM_CUDA (190)
+#else
+    std::string expected_prefix = "ROCm";
+    uint16_t expected_em = 0xE0; // EM_AMDGPU (224)
+#endif
+
+    if (target_architecture.substr(0, 4) != expected_prefix) {
+        throw HardwareMismatchError("Hardware mismatch: expected target architecture starting with " + expected_prefix + " but found " + target_architecture);
+    }
+
+    if (e_machine != expected_em) {
+        throw std::runtime_error("Cannot load kernel: ELF binary architecture mismatch for current platform.");
     }
 }
 
-void AOTEngine::load_kernel(const std::vector<uint8_t>& binary_data) {
+void AOTEngine::load_kernel(const std::vector<uint8_t>& binary_data, const std::string& target_architecture) {
     std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
 
-    validate_elf_structure(binary_data);
+    validate_elf_structure(binary_data, target_architecture);
 
     if (module_ != nullptr) {
         CHECK_HIP(hipModuleUnload(module_));
