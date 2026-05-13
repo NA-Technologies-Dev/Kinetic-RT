@@ -168,7 +168,7 @@ def validate_compilation(compiled_binary, backend):
 
 from .hardware_probe import probe_hardware
 
-def compile_and_serialize(engine, serializer, output_filepath, device_id=None):
+def compile_and_serialize(engine, serializer, output_filepath, device_id=None, **kwargs):
     """
     Triton-to-Kinetic Bridge
     Compiles the fused Triton kernel and serializes it into a .kin file using the Kinetic-RT Serializer.
@@ -189,7 +189,7 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None):
         if device_id is None:
             device_id = "sm75"
     else:
-        target_architecture = "ROCm_gfx942"
+        target_architecture = "ROCm_gfx1100"
         # Mock HSACO ELF compilation
         compiled_binary = bytearray(64)
         compiled_binary[0:4] = b"\x7fELF"
@@ -199,14 +199,14 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None):
         compiled_binary[19] = 0x00
         compiled_binary = bytes(compiled_binary)
         if device_id is None:
-            device_id = "gfx942"
+            device_id = "gfx1100"
 
     # Guardrail check - in a real scenario we'd branch the validation
     # For CI, we just skip detailed validation to simplify, or adjust the validator.
 
     # Dummy weights hash and op graph
-    weights_hash = 987654321
-    op_graph_data = [10, 20, 30] # Representing our fused op node
+    weights_hash = kwargs.get("weights_hash", 987654321)
+    op_graph_data = kwargs.get("op_graph_data", [10, 20, 30]) # Representing our fused op node
 
     # Serialize to .kin
     serializer.save_kin_file(output_filepath, device_id, target_architecture, weights_hash, op_graph_data, list(compiled_binary))
