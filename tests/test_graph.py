@@ -1,3 +1,4 @@
+import pytest
 import python.kinetic_rt as kinetic_rt
 
 def test_graph_capture_and_launch():
@@ -44,11 +45,8 @@ def test_graph_capture_and_launch():
 def test_uninstantiated_launch():
     wrapper = kinetic_rt.GraphWrapper()
     stream_ptr = 1234
-    try:
+    with pytest.raises(RuntimeError, match="(?i)not instantiated"):
         wrapper.launch([stream_ptr], [])
-        assert False, "Expected RuntimeError due to uninstantiated graph"
-    except RuntimeError as e:
-        assert "not instantiated" in str(e).lower()
     print("Uninstantiated Launch Test passed successfully!")
 
 def test_async_stress():
