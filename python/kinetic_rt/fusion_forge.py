@@ -173,11 +173,16 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
     Triton-to-Kinetic Bridge
     Compiles the fused Triton kernel and serializes it into a .kin file using the Kinetic-RT Serializer.
     """
-    topology, backend = probe_hardware()
+    topology, backend, arch = probe_hardware()
+
+    if backend == "CPU":
+        backend = "ROCm"
+        arch = "gfx1100"
 
     # Set the target architecture based on backend
+    target_architecture = f"{backend}_{arch}"
+
     if backend == "CUDA":
-        target_architecture = "CUDA_sm75"
         # Mock PTX/CUBIN ELF compilation
         compiled_binary = bytearray(64)
         compiled_binary[0:4] = b"\x7fELF"
@@ -187,9 +192,8 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
         compiled_binary[19] = 0x00
         compiled_binary = bytes(compiled_binary)
         if device_id is None:
-            device_id = "sm75"
+            device_id = arch
     else:
-        target_architecture = "ROCm_gfx1100"
         # Mock HSACO ELF compilation
         compiled_binary = bytearray(64)
         compiled_binary[0:4] = b"\x7fELF"
@@ -199,7 +203,7 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
         compiled_binary[19] = 0x00
         compiled_binary = bytes(compiled_binary)
         if device_id is None:
-            device_id = "gfx1100"
+            device_id = arch
 
     # Guardrail check - in a real scenario we'd branch the validation
     # For CI, we just skip detailed validation to simplify, or adjust the validator.
