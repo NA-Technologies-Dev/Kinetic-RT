@@ -137,8 +137,8 @@ std::vector<uint8_t> Serializer::load_kin_file(const std::string& filepath) {
     }
 
     // Additional sanity bounds for massive allocations
-    if (kernel_binaries_size > 1024ULL * 1024ULL * 1024ULL * 2ULL) { // 2 GB max arbitrary limit
-        throw std::runtime_error("Invalid file format: kernel binary excessively large.");
+    if (kernel_binaries_size > 1024ULL * 1024ULL * 1024ULL * 2ULL || op_graph_data_size > 1024ULL * 1024ULL * 1024ULL * 2ULL) { // 2 GB max arbitrary limit
+        throw std::runtime_error("Invalid file format: excessively large section.");
     }
 
     char safe_target[256];
