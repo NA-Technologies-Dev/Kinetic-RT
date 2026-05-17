@@ -79,6 +79,7 @@ __pycache__/
 env/
 venv/
 .eggs/
+*.egg-info/
 
 # Build and Binaries
 build/
