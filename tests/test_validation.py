@@ -14,7 +14,11 @@ if "triton" not in sys.modules:
 
 if "torch" not in sys.modules:
     torch = ModuleType("torch")
+    torch.Tensor = type("Tensor", (), {})
     sys.modules["torch"] = torch
+else:
+    if not hasattr(sys.modules["torch"], "Tensor"):
+        sys.modules["torch"].Tensor = type("Tensor", (), {})
 
 from python.kinetic_rt.fusion_forge import validate_compilation, TritonCompilationError
 

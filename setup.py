@@ -14,18 +14,36 @@ class get_pybind_include(object):
         import pybind11
         return pybind11.get_include()
 
-# For a real ROCm environment, we'd include actual HIP paths.
-# Since we are setting up a mock build for CI/testing without ROCm, we'll configure it differently.
-mock_hip = os.environ.get("MOCK_HIP", "1") == "1"
-
+# Dynamic hardware detection for compilation macros
 macros = []
+sources = ['bindings/python_bindings.cpp', 'src/AOTEngine.cpp', 'src/GraphWrapper.cpp', 'src/Communicator.cpp']
+
+try:
+    import torch
+    if torch.cuda.is_available():
+        if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+            macros.append(("__HIP_PLATFORM_AMD__", "1"))
+            print("Detected ROCm environment. Compiling with __HIP_PLATFORM_AMD__")
+            mock_hip = False
+        else:
+            macros.append(("__HIP_PLATFORM_NVIDIA__", "1"))
+            print("Detected CUDA environment. Compiling with __HIP_PLATFORM_NVIDIA__")
+            mock_hip = False
+    else:
+        mock_hip = True
+except ImportError:
+    mock_hip = True
+
 if mock_hip:
+    # Forced mock environment via env var or lack of torch/GPU
     macros.append(("MOCK_HIP", "1"))
+    sources.extend(['tests/mock_hip.cpp', 'tests/mock_rccl.cpp'])
+    print("Warning: No CUDA or ROCm detected. Compiling in MOCK_HIP mode for CPU.")
 
 ext_modules = [
     Extension(
         'python.kinetic_rt._core',
-        ['bindings/python_bindings.cpp', 'src/AOTEngine.cpp', 'src/GraphWrapper.cpp', 'tests/mock_hip.cpp', 'src/Communicator.cpp', 'tests/mock_rccl.cpp'],
+        sources,
         include_dirs=[
             # Path to pybind11 headers
             get_pybind_include(),

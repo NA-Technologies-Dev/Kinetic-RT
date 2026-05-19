@@ -68,7 +68,7 @@ class BackendFactory:
         if backend == "CPU":
             backend = "CPU"
             arch = "CPU"
-        return backend, arch, f"{backend}_{arch}"
+        return backend, arch, arch
 
 def test_serializer_error_handling():
     backend, arch, target_arch = BackendFactory.get_test_arch()
@@ -130,6 +130,8 @@ def test_aot_engine():
     # because AOTEngine::validate_elf_structure explicitly expects these prefixes.
     # We will pretend we are on the detected backend, or fallback to ROCm for headless.
     backend, arch, target_arch = BackendFactory.get_test_arch()
+
+    os.environ["KINETIC_FORCE_ARCH"] = arch
 
     engine = kinetic_rt.AOTEngine()
     filepath = "aot_model.kin"

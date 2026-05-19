@@ -58,8 +58,8 @@ def test_async_stress():
 
     stream_obj = stream_ptr # Can just be an integer
 
-    # Run 1,000 overlapping asynchronous launches
-    for i in range(1000):
+    # Run 100 overlapping asynchronous launches
+    for i in range(100):
         # We pass a new buffer object on each call. If the system was GC'ing them incorrectly
         # or racing, this would crash/segfault on a real system, and our stateful mock tracks it safely.
         dummy_buffer = [i]

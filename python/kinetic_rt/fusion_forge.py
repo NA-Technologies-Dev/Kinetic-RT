@@ -180,7 +180,7 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
         arch = "CPU"
 
     # Set the target architecture based on backend
-    target_architecture = f"{backend}_{arch}"
+    target_architecture = arch
 
     if backend == "CUDA":
         # Mock PTX/CUBIN ELF compilation
@@ -192,7 +192,7 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
         compiled_binary[19] = 0x00
         compiled_binary = bytes(compiled_binary)
         if device_id is None:
-            device_id = arch
+            device_id = target_architecture
     else:
         # Mock HSACO ELF compilation
         compiled_binary = bytearray(64)
@@ -203,7 +203,7 @@ def compile_and_serialize(engine, serializer, output_filepath, device_id=None, *
         compiled_binary[19] = 0x00
         compiled_binary = bytes(compiled_binary)
         if device_id is None:
-            device_id = arch
+            device_id = target_architecture
 
     # Guardrail check - in a real scenario we'd branch the validation
     # For CI, we just skip detailed validation to simplify, or adjust the validator.

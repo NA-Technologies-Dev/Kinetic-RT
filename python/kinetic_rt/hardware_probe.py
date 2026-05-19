@@ -6,7 +6,8 @@ def probe_hardware():
     forced_arch = os.environ.get("KINETIC_FORCE_ARCH")
     if forced_arch:
         backend = "CUDA" if "sm" in forced_arch else "ROCm"
-        return "1x Overridden GPU", backend, forced_arch
+        full_arch = f"{backend}_{forced_arch}" if not forced_arch.startswith(f"{backend}_") else forced_arch
+        return "1x Overridden GPU", backend, full_arch
 
     if torch.cuda.is_available():
         num_gpus = torch.cuda.device_count()
@@ -28,12 +29,12 @@ def probe_hardware():
             else:
                 # Sometimes gcnArchName has a prefix or suffix, like gfx90a:sramecc+...
                 arch = arch.split(':')[0]
-            return f"{num_gpus}x {name}", "ROCm", arch
+            return f"{num_gpus}x {name}", "ROCm", f"ROCm_{arch}"
         else:
             # CUDA
             cap = torch.cuda.get_device_capability(0)
             arch = f"sm{cap[0]}{cap[1]}"
-            return f"{num_gpus}x {name} (Compute {cap[0]}.{cap[1]})", "CUDA", arch
+            return f"{num_gpus}x {name} (Compute {cap[0]}.{cap[1]})", "CUDA", f"CUDA_{arch}"
 
     # Headless CI Resilience
     return "CPU Only (Headless)", "CPU", "CPU"
